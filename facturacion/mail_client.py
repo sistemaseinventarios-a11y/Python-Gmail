@@ -64,8 +64,8 @@ def obtener_ids_en_ventana(conexion: imaplib.IMAP4_SSL, epoch_inicio: int, epoch
     """
     conexion.select("INBOX", readonly=True)
 
-    fecha_desde = dt.datetime.utcfromtimestamp(epoch_inicio).strftime("%d-%b-%Y")
-    fecha_hasta = (dt.datetime.utcfromtimestamp(epoch_fin) + dt.timedelta(days=1)).strftime("%d-%b-%Y")
+    fecha_desde = dt.datetime.fromtimestamp(epoch_inicio, dt.timezone.utc).strftime("%d-%b-%Y")
+    fecha_hasta = (dt.datetime.fromtimestamp(epoch_fin, dt.timezone.utc) + dt.timedelta(days=1)).strftime("%d-%b-%Y")
 
     _, datos = conexion.search(None, f'(SINCE "{fecha_desde}" BEFORE "{fecha_hasta}")')
     return datos[0].split()

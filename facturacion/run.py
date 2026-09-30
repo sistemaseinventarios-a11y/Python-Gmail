@@ -136,7 +136,10 @@ def ejecutar_corrida() -> None:
     epoch_inicio = ultima_corrida if ultima_corrida else epoch_fin - VENTANA_INICIAL_HORAS * 3600
 
     conexion = mail_client.conectar()
-    lineas_log = [f"Ventana: {dt.datetime.utcfromtimestamp(epoch_inicio)} a {dt.datetime.utcfromtimestamp(epoch_fin)} (UTC)"]
+    lineas_log = [
+        f"Ventana: {dt.datetime.fromtimestamp(epoch_inicio, dt.timezone.utc)} a "
+        f"{dt.datetime.fromtimestamp(epoch_fin, dt.timezone.utc)} (UTC)"
+    ]
 
     try:
         ids = mail_client.obtener_ids_en_ventana(conexion, epoch_inicio, epoch_fin)

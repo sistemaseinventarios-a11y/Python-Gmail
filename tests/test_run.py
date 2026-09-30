@@ -41,13 +41,16 @@ def _zip_con_xml(xml_bytes: bytes) -> bytes:
     return buffer.getvalue()
 
 
-def _correo(asunto="Factura", adjuntos=None, id_mensaje="<run@test>"):
+def _correo(asunto="Factura", adjuntos=None, id_mensaje="<run@test>", fecha_hora_utc=None):
     return CorreoRecibido(
         id_mensaje=id_mensaje,
         id_imap=b"1",
         asunto=asunto,
         remitente="proveedor@ejemplo.com",
-        fecha_hora_utc=dt.datetime(2026, 9, 8, 20, 0, 0),  # 15:00 hora Colombia (UTC-5)
+        # 20:00 UTC == 15:00 hora Colombia (UTC-5). Se puede pisar con un
+        # valor reciente cuando la prueba pasa por el filtro de ventana de
+        # tiempo real de ejecutar_corrida (ver test_xml_corrupto_no_tumba...).
+        fecha_hora_utc=fecha_hora_utc or dt.datetime(2026, 9, 8, 20, 0, 0),
         cuerpo_texto="",
         adjuntos=adjuntos or [],
     )
@@ -109,3 +112,46 @@ def test_caso_ambiguo_va_a_cola_de_revision(tmp_path, monkeypatch):
 
     hoja_cola = load_workbook(ruta_cola)["Pendientes"]
     assert hoja_cola.cell(row=2, column=7).value == "NC-09"  # columna "Factura (tentativa)"
+
+
+def test_xml_corrupto_no_tumba_la_corrida_y_guarda_el_zip_original(tmp_path, monkeypatch):
+    """Caso real: un XML malformado dentro del zip no debe detener el resto de la corrida,
+    y el zip original debe quedar disponible en la cola de revisión (no perderse)."""
+    carpeta_drive, ruta_excel, ruta_cola = _preparar_rutas(tmp_path, monkeypatch)
+    monkeypatch.setattr(run, "RUTA_ESTADO", str(tmp_path / "estado" / "procesados.json"))
+    monkeypatch.setattr(run, "RUTA_LOG", str(tmp_path / "estado" / "log_corridas.txt"))
+
+    hace_una_hora = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(hours=1)
+    zip_con_xml_corrupto = _zip_con_xml(b"esto no es un xml valido <<<")
+    correo_malo = _correo(
+        adjuntos=[Adjunto("factura.zip", zip_con_xml_corrupto)], id_mensaje="<malo@test>", fecha_hora_utc=hace_una_hora
+    )
+    correo_bueno = _correo(
+        adjuntos=[Adjunto("factura.zip", _zip_con_xml(XML_VALIDO))], id_mensaje="<bueno@test>", fecha_hora_utc=hace_una_hora
+    )
+
+    class ConexionFalsa:
+        def logout(self):
+            pass
+
+    monkeypatch.setattr(run.mail_client, "conectar", lambda: ConexionFalsa())
+    monkeypatch.setattr(run.mail_client, "obtener_ids_en_ventana", lambda *a, **k: [b"1", b"2"])
+    correos_por_id = {b"1": correo_malo, b"2": correo_bueno}
+    monkeypatch.setattr(run.mail_client, "obtener_mensaje_completo", lambda conexion, id_imap: correos_por_id[id_imap])
+
+    run.ejecutar_corrida()  # no debe lanzar excepción
+
+    from openpyxl import load_workbook
+
+    # La factura buena sí se registró a pesar del error en la otra.
+    fecha_colombia = (hace_una_hora + run.OFFSET_COLOMBIA).date()
+    wb_final = load_workbook(ruta_excel)
+    nombre_pestana = fecha_colombia.strftime("%d-%m-%Y")
+    assert wb_final[nombre_pestana].cell(row=2, column=config.COL_FACTURA).value == "RUN001"
+
+    # El correo con XML corrupto quedó en la cola de revisión, con el zip original guardado.
+    hoja_cola = load_workbook(ruta_cola)["Pendientes"]
+    fila_error = [hoja_cola.cell(row=2, column=c).value for c in range(1, 15)]
+    assert "Error inesperado" in fila_error[5]  # columna "Motivo de la duda"
+    ruta_guardada = fila_error[12]  # columna "Archivo guardado"
+    assert ruta_guardada and Path(ruta_guardada).exists()

@@ -54,3 +54,28 @@ def test_detecta_nota_credito():
     xml_nc = XML_FACTURA_EJEMPLO.replace(b"Invoice", b"CreditNote")
     datos = parsear_xml_factura(xml_nc)
     assert datos.es_nota_credito is True
+
+
+def test_tolera_bom_antes_del_xml_de_nivel_superior():
+    # Caso real visto en producción (proveedor DISTRACOM S.A.): el archivo
+    # trae un BOM (﻿) colado antes de "<?xml", lo que antes tumbaba
+    # ET.fromstring con "XML or text declaration not at start of entity".
+    xml_con_bom = "﻿".encode("utf-8") + XML_FACTURA_EJEMPLO
+    datos = parsear_xml_factura(xml_con_bom)
+    assert datos.numero_factura == "SETP990001"
+
+
+def test_tolera_bom_dentro_del_attached_document_embebido():
+    xml_embebido_con_bom = "﻿".encode("utf-8") + XML_FACTURA_EJEMPLO
+    attached_document = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<AttachedDocument xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" '
+        b'xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">'
+        b"<cac:Attachment><cac:ExternalReference><cbc:Description><![CDATA["
+        + xml_embebido_con_bom
+        + b"]]></cbc:Description></cac:ExternalReference></cac:Attachment>"
+        b"</AttachedDocument>"
+    )
+    datos = parsear_xml_factura(attached_document)
+    assert datos.numero_factura == "SETP990001"
+    assert datos.cufe == "abc123cufe"

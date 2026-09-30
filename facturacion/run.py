@@ -41,6 +41,19 @@ def _registrar_log(lineas: list[str]) -> None:
             f.write(linea + "\n")
 
 
+def _adjunto_crudo_para_revision(correo) -> tuple:
+    """El primer adjunto zip/pdf/xml del correo tal cual llegó, sin procesar.
+
+    Se usa cuando algo falla a mitad de la extracción: así el archivo original
+    queda guardado para revisión manual en vez de perderse la referencia.
+    """
+    for extension in (".zip", ".pdf", ".xml"):
+        for adjunto in correo.adjuntos:
+            if adjunto.nombre_archivo.lower().endswith(extension):
+                return adjunto.contenido, extension.lstrip(".")
+    return None, None
+
+
 def _guardar_pendiente(correo, resultado: extractor.ResultadoExtraccion, motivo: str) -> None:
     hora_colombia = _a_hora_colombia(correo.fecha_hora_utc)
     ruta_archivo = ""
@@ -161,9 +174,14 @@ def ejecutar_corrida() -> None:
                 state.marcar(estado, correo.id_mensaje, "ok", resultado_texto)
             except Exception as error:  # noqa: BLE001 — un correo problemático no debe tumbar la corrida
                 detalle_error = f"{error}\n{traceback.format_exc()}"
+                contenido_crudo, extension_cruda = _adjunto_crudo_para_revision(correo)
                 _guardar_pendiente(
                     correo,
-                    extractor.ResultadoExtraccion(categoria=Categoria.FACTURA_CANDIDATA),
+                    extractor.ResultadoExtraccion(
+                        categoria=Categoria.FACTURA_CANDIDATA,
+                        contenido_adjunto=contenido_crudo,
+                        extension_adjunto=extension_cruda,
+                    ),
                     f"Error inesperado procesando este correo: {error}",
                 )
                 state.marcar(estado, correo.id_mensaje, "error", detalle_error)

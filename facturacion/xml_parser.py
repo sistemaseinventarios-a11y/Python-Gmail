@@ -29,6 +29,17 @@ def _local_tag(elemento):
     return tag.split("}", 1)[1] if "}" in tag else tag
 
 
+def _sin_bom_inicial(texto: str) -> str:
+    """Quita un BOM (\\ufeff) y espacios en blanco antes de "<?xml".
+
+    Algunos proveedores dejan un BOM colado dentro del CDATA del
+    AttachedDocument; si queda antes de la declaración "<?xml ...?>",
+    ET.fromstring falla con "XML or text declaration not at start of entity"
+    aunque el contenido en sí sea válido.
+    """
+    return texto.lstrip("﻿ \t\r\n")
+
+
 def _buscar_texto(raiz, nombre_local):
     """Devuelve el texto del primer elemento cuyo tag local coincida, ignorando namespaces."""
     for nodo in raiz.iter():
@@ -75,13 +86,16 @@ def _desenvolver_attached_document(raiz):
 
     for nodo in raiz.iter():
         if _local_tag(nodo) == "Description" and nodo.text and "<Invoice" in nodo.text:
-            return ET.fromstring(nodo.text)
+            return ET.fromstring(_sin_bom_inicial(nodo.text))
         if _local_tag(nodo) == "Description" and nodo.text and "<CreditNote" in nodo.text:
-            return ET.fromstring(nodo.text)
+            return ET.fromstring(_sin_bom_inicial(nodo.text))
     return raiz
 
 
 def parsear_xml_factura(contenido_xml: bytes) -> DatosFactura:
+    # bytes.lstrip acepta bytes de la marca BOM UTF-8 y de espacios en blanco;
+    # protege igual que _sin_bom_inicial pero a nivel de bytes crudos.
+    contenido_xml = contenido_xml.lstrip(b"\xef\xbb\xbf \t\r\n")
     raiz = ET.fromstring(contenido_xml)
     raiz = _desenvolver_attached_document(raiz)
 

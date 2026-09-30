@@ -8,12 +8,13 @@ load_dotenv()
 
 ZONA_HORARIA_COLOMBIA = "America/Bogota"
 
-# Carpeta local sincronizada por "Google Drive para escritorio" donde vive
-# tanto el Excel de control como las subcarpetas por día con los ZIP/PDF.
+# Carpeta local sincronizada por "Google Drive para escritorio" donde se crean
+# las subcarpetas por día con los ZIP/PDF de cada factura.
 CARPETA_DRIVE_LOCAL = os.getenv("CARPETA_DRIVE_LOCAL")
 
-# Nombre del archivo Excel de control dentro de esa carpeta.
-NOMBRE_EXCEL_CONTROL = os.getenv("NOMBRE_EXCEL_CONTROL", "Control_Facturacion.xlsx")
+# Ruta completa del Excel de control (Consolidado 2026.xlsx), que puede vivir
+# en otra ubicación de Drive distinta a la carpeta de adjuntos.
+RUTA_EXCEL_CONTROL = os.getenv("RUTA_EXCEL_CONTROL")
 
 # Columnas A-N según el esquema del documento de referencia.
 ENCABEZADOS = [

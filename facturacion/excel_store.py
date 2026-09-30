@@ -10,6 +10,7 @@ Reglas clave del documento de referencia que este módulo aplica:
 
 import datetime as dt
 import os
+import shutil
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -19,6 +20,16 @@ from . import config
 FORMATO_HORA = "hh:mm:ss"
 FORMATO_FECHA = "dd/mm/yyyy"
 FORMATO_VALOR = "#,##0.00"
+
+# Fragmentos (en minúsculas) usados para ubicar cada columna leyendo el
+# encabezado real de cada pestaña, en vez de asumir una posición fija.
+# Esto es necesario porque las pestañas antiguas tienen 13 columnas (sin
+# "Hora de Recepción"), corriendo todo lo demás una posición a la izquierda.
+_FRAGMENTOS_ENCABEZADO = {
+    "factura": ["factura"],
+    "nit": ["nit"],
+    "cufe": ["cufe"],
+}
 
 
 def abrir_o_crear_workbook(ruta: str) -> Workbook:
@@ -51,26 +62,55 @@ def obtener_o_crear_pestana_dia(wb: Workbook, fecha: dt.date) -> Worksheet:
     return hoja
 
 
+def _encontrar_columna(hoja: Worksheet, fragmentos: list[str]) -> int | None:
+    """Busca en la fila 1 (encabezado) una celda cuyo texto contenga alguno de los fragmentos."""
+    for celda in hoja[1]:
+        valor = celda.value
+        if not valor:
+            continue
+        texto = str(valor).strip().lower()
+        if any(fragmento in texto for fragmento in fragmentos):
+            return celda.column
+    return None
+
+
 def buscar_duplicado(wb: Workbook, numero_factura: str, nit: str | None, cufe: str | None):
     """Busca (numero_factura + nit) o el mismo cufe en TODAS las pestañas de día.
+
+    Las columnas se ubican leyendo el encabezado real de cada pestaña (no una
+    posición fija), porque las pestañas antiguas de 13 columnas corren la
+    columna "Factura" de G a F respecto al esquema actual.
 
     Devuelve el nombre de la pestaña donde ya está registrada, o None si no existe.
     """
     for nombre_hoja in wb.sheetnames:
         hoja = wb[nombre_hoja]
-        for fila in hoja.iter_rows(min_row=2, values_only=True):
-            factura_existente = fila[config.COL_FACTURA - 1]
-            nit_existente = fila[config.COL_NIT - 1]
-            cufe_existente = fila[config.COL_CUFE - 1]
+        if hoja.max_row < 2:
+            continue
 
-            if cufe and cufe_existente and str(cufe_existente) == str(cufe):
+        col_factura = _encontrar_columna(hoja, _FRAGMENTOS_ENCABEZADO["factura"])
+        col_nit = _encontrar_columna(hoja, _FRAGMENTOS_ENCABEZADO["nit"])
+        col_cufe = _encontrar_columna(hoja, _FRAGMENTOS_ENCABEZADO["cufe"])
+
+        if col_factura is None and col_cufe is None:
+            # Pestaña sin encabezados reconocibles (ej. una hoja ajena al
+            # esquema de facturación): se ignora en vez de arriesgar un falso
+            # positivo o negativo.
+            continue
+
+        for fila in hoja.iter_rows(min_row=2):
+            factura_existente = fila[col_factura - 1].value if col_factura else None
+            nit_existente = fila[col_nit - 1].value if col_nit else None
+            cufe_existente = fila[col_cufe - 1].value if col_cufe else None
+
+            if cufe and cufe_existente and str(cufe_existente).strip() == str(cufe).strip():
                 return nombre_hoja
             if (
                 factura_existente
-                and str(factura_existente) == str(numero_factura)
+                and str(factura_existente).strip() == str(numero_factura).strip()
                 and nit
                 and nit_existente
-                and str(nit_existente) == str(nit)
+                and str(nit_existente).strip() == str(nit).strip()
             ):
                 return nombre_hoja
     return None
@@ -127,5 +167,25 @@ def insertar_factura(wb: Workbook, fecha_recepcion: dt.date, hora_recepcion: dt.
     hoja.cell(row=fila_destino, column=config.COL_VALOR_SIN_IVA).number_format = FORMATO_VALOR
 
 
+def respaldar(ruta: str) -> str | None:
+    """Copia el Excel actual a una subcarpeta 'backups' con fecha/hora, antes de tocarlo.
+
+    Devuelve la ruta del respaldo, o None si el archivo todavía no existía
+    (primera corrida, nada que respaldar).
+    """
+    if not os.path.exists(ruta):
+        return None
+
+    carpeta_backups = os.path.join(os.path.dirname(ruta), "backups")
+    os.makedirs(carpeta_backups, exist_ok=True)
+
+    nombre_base = os.path.splitext(os.path.basename(ruta))[0]
+    marca_tiempo = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ruta_respaldo = os.path.join(carpeta_backups, f"{nombre_base}_{marca_tiempo}.xlsx")
+    shutil.copy2(ruta, ruta_respaldo)
+    return ruta_respaldo
+
+
 def guardar(wb: Workbook, ruta: str) -> None:
+    respaldar(ruta)
     wb.save(ruta)

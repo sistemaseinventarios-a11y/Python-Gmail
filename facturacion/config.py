@@ -16,6 +16,13 @@ CARPETA_DRIVE_LOCAL = os.getenv("CARPETA_DRIVE_LOCAL")
 # en otra ubicación de Drive distinta a la carpeta de adjuntos.
 RUTA_EXCEL_CONTROL = os.getenv("RUTA_EXCEL_CONTROL")
 
+# Excel aparte (no el oficial) donde quedan los casos que necesitan revisión
+# manual antes de registrarse. Por defecto, junto a la carpeta de adjuntos.
+RUTA_COLA_REVISION = os.getenv(
+    "RUTA_COLA_REVISION",
+    os.path.join(CARPETA_DRIVE_LOCAL, "Pendientes_de_revision.xlsx") if CARPETA_DRIVE_LOCAL else None,
+)
+
 # Columnas A-N según el esquema del documento de referencia.
 ENCABEZADOS = [
     "Consecutivo",

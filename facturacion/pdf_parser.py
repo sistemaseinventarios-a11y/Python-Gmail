@@ -31,8 +31,14 @@ class DatosFacturaPdf:
 
 
 def _texto_del_pdf(contenido_pdf: bytes) -> str:
-    lector = PdfReader(io.BytesIO(contenido_pdf))
-    return "\n".join(pagina.extract_text() or "" for pagina in lector.pages)
+    """Nunca lanza: un PDF corrupto/no estándar no debe tumbar la corrida completa,
+    solo debe traducirse en "no se pudo extraer nada" (y por lo tanto revisión manual).
+    """
+    try:
+        lector = PdfReader(io.BytesIO(contenido_pdf))
+        return "\n".join(pagina.extract_text() or "" for pagina in lector.pages)
+    except Exception:
+        return ""
 
 
 def _a_float(texto_valor: str) -> float | None:
